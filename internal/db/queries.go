@@ -47,7 +47,7 @@ func GetAllEndpoints(ctx context.Context, pool *pgxpool.Pool) ([]models.Endpoint
 	}
 	defer rows.Close()
 
-	var endpoints []models.Endpoint
+	endpoints := []models.Endpoint{} // initializing as empty slice not nil
 	for rows.Next() {
 		var e models.Endpoint
 		err := rows.Scan(&e.ID, &e.Name, &e.URL, &e.IntervalSeconds,
@@ -84,6 +84,9 @@ func GetEndpointByID(ctx context.Context, pool *pgxpool.Pool, id int64) (*models
 		&endpoint.CreatedAt,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil // endpoint not found
+		}
 		return nil, fmt.Errorf("could not get endpoint: %w", err)
 	}
 
@@ -109,7 +112,10 @@ func UpdateEndpoint(ctx context.Context, pool *pgxpool.Pool, id int64, name stri
 		&endpoint.CreatedAt,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("could not update endpoint: %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil // endpoint not found
+		}
+		return nil, fmt.Errorf("could not get endpoint: %w", err)
 	}
 
 	return endpoint, nil
@@ -121,9 +127,13 @@ func DeleteEndpoint(ctx context.Context, pool *pgxpool.Pool, id int64) error {
 		WHERE id = $1
     `
 
-	_, err := pool.Exec(ctx, query, id)
+	result, err := pool.Exec(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("could not delete endpoint: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("endpoint not found")
 	}
 
 	return nil
