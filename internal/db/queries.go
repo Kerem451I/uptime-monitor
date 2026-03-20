@@ -208,7 +208,7 @@ func GetChecksByEndpointID(ctx context.Context, pool *pgxpool.Pool, endpointID i
 	}
 	defer rows.Close()
 
-	var checks []models.Check
+	checks := []models.Check{}
 	for rows.Next() {
 		var c models.Check
 		err := rows.Scan(&c.ID, &c.EndpointID, &c.CheckedAt, &c.Succeeded,
