@@ -21,3 +21,20 @@ type Check struct {
 	LatencyMs  *int
 	ErrorMsg   *string
 }
+
+type CheckFilter struct {
+	Status string // "failed", "success", or "" for all
+	Days   int    // 0 means no time filter
+	Limit  int    // 0 means use default
+	Offset int
+}
+
+// instead of a growing list of optional parameters, we group them into a struct.
+// cleaner function signature, easier to extend later.
+
+type EndpointStats struct {
+	TotalChecks      int
+	TotalFailures    int
+	AvgLatencyMs     int
+	UptimePercentage float64
+}
