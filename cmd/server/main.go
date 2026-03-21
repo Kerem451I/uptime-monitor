@@ -2,8 +2,11 @@ package main
 
 import (
 	"log"
+	"net/http"
 	"os"
+	"time"
 
+	"github.com/Kerem451I/uptime-monitor/internal/api"
 	"github.com/Kerem451I/uptime-monitor/internal/db"
 	"github.com/joho/godotenv"
 )
@@ -26,4 +29,25 @@ func main() {
 	defer pool.Close()
 
 	log.Println("connected to database successfully")
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	handler := api.NewHandler(pool)
+	router := api.NewRouter(handler)
+
+	server := http.Server{
+		Addr:         ":" + port,
+		Handler:      router,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 20 * time.Second,
+		IdleTimeout:  30 * time.Second,
+	}
+
+	log.Printf("server starting on port %s", port)
+	if err := server.ListenAndServe(); err != nil {
+		log.Fatal(err)
+	}
 }
