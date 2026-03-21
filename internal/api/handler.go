@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/Kerem451I/uptime-monitor/internal/db"
+	"github.com/Kerem451I/uptime-monitor/internal/models"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -177,4 +178,117 @@ func (h *Handler) DeleteEndpoint(w http.ResponseWriter, r *http.Request) {
 	// later i can use a sentinel error variable, but that's a refinement for another time
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) GetEndpointChecks(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r)
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	// verifying that endpoint exists before querying checks
+	// if the endpoint doesn't exist we want a 404, not an empty checks array. this is the right order
+	endpoint, err := db.GetEndpointByID(r.Context(), h.pool, id)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "could not get endpoint")
+		return
+	}
+	if endpoint == nil {
+		h.writeError(w, http.StatusNotFound, "endpoint not found")
+		return
+	}
+
+	// reading an integer query param requires strconv.Atoi since query params are always strings
+	q := r.URL.Query()
+	days, _ := strconv.Atoi(q.Get("days"))
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	offset, _ := strconv.Atoi(q.Get("offset"))
+
+	// ignoring the error with _ if the param is empty or not a number
+	// atoi returns 0 which is a valid default for all three int fields
+	// no need to handle the error explicitly here
+
+	filter := models.CheckFilter{
+		Status: q.Get("status"),
+		Days:   days,
+		Limit:  limit,
+		Offset: offset,
+	}
+
+	checks, err := db.GetChecksByEndpointID(r.Context(), h.pool, id, filter)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "could not get checks")
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, checks)
+}
+
+func (h *Handler) GetLatestCheck(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r)
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	// verifying that endpoint exists before querying checks
+	// if the endpoint doesn't exist we want a 404, not an empty checks array. this is the right order
+	endpoint, err := db.GetEndpointByID(r.Context(), h.pool, id)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "could not get endpoint")
+		return
+	}
+	if endpoint == nil {
+		h.writeError(w, http.StatusNotFound, "endpoint not found")
+		return
+	}
+
+	check, err := db.GetLatestCheck(r.Context(), h.pool, id)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "could not get the latest check")
+		return
+	}
+
+	if check == nil {
+		h.writeError(w, http.StatusNotFound, "no checks found for this endpoint")
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, check)
+}
+
+func (h *Handler) GetEndpointStats(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r)
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	// verifying that endpoint exists before querying checks
+	// if the endpoint doesn't exist we want a 404, not an empty checks array. this is the right order
+	endpoint, err := db.GetEndpointByID(r.Context(), h.pool, id)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "could not get endpoint")
+		return
+	}
+	if endpoint == nil {
+		h.writeError(w, http.StatusNotFound, "endpoint not found")
+		return
+	}
+
+	// reading an integer query param requires strconv.Atoi since query params are always strings
+	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+
+	// ignoring the error with _ if the param is empty or not a number
+	// atoi returns 0 which is a valid default for int field
+	// no need to handle the error explicitly here
+
+	stats, err := db.GetEndpointStats(r.Context(), h.pool, id, days)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "could not get stats")
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, stats)
 }
