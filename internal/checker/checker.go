@@ -1,1 +1,117 @@
 package checker
+
+import (
+	"context"
+	"io"
+	"log"
+	"net/http"
+	"time"
+
+	"github.com/Kerem451I/uptime-monitor/internal/db"
+	"github.com/Kerem451I/uptime-monitor/internal/models"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type Checker struct {
+	pool   *pgxpool.Pool
+	client *http.Client
+}
+
+func New(pool *pgxpool.Pool) *Checker {
+	return &Checker{
+		pool: pool,
+		client: &http.Client{
+			Timeout: 10 * time.Second,
+		},
+	}
+}
+
+type checkResult struct {
+	succeeded  bool
+	statusCode *int
+	latencyMs  *int
+	errorMsg   *string
+}
+
+func (c *Checker) Run(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case <-ticker.C:
+			endpoints, err := db.GetAllEndpoints(ctx, c.pool)
+			if err != nil {
+				log.Printf("checker: could not fetch endpoints: %v", err)
+				continue
+			}
+
+			for _, ep := range endpoints {
+				if !ep.IsActive {
+					continue
+				}
+				c.processEndpoint(ctx, ep)
+			}
+		}
+	}
+}
+
+func (c *Checker) processEndpoint(ctx context.Context, ep models.Endpoint) {
+	check, err := db.GetLatestCheck(ctx, c.pool, ep.ID)
+	if err != nil {
+		log.Printf("checker: endpoint %d get last check error: %v", ep.ID, err)
+		return
+	}
+
+	interval := time.Duration(ep.IntervalSeconds) * time.Second
+	if check != nil && time.Since(check.CheckedAt) < interval {
+		return
+	}
+
+	result := c.ping(ctx, ep.URL, ep.ExpectedStatus)
+	if err := db.InsertCheck(ctx, c.pool, ep.ID, result.succeeded, result.statusCode, result.latencyMs, result.errorMsg); err != nil {
+		log.Printf("checker: endpoint %d insert check error: %v", ep.ID, err)
+	}
+}
+
+func (c *Checker) ping(ctx context.Context, url string, expectedStatus int) checkResult {
+	start := time.Now()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		msg := err.Error()
+		return checkResult{
+			succeeded: false,
+			errorMsg:  &msg,
+		}
+	}
+
+	resp, err := c.client.Do(req)
+	latency := int(time.Since(start).Milliseconds())
+
+	if err != nil {
+		msg := err.Error()
+		return checkResult{
+			succeeded: false,
+			latencyMs: &latency,
+			errorMsg:  &msg,
+		}
+	}
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
+
+	status := resp.StatusCode
+	succeeded := status == expectedStatus
+
+	return checkResult{
+		succeeded:  succeeded,
+		statusCode: &status,
+		latencyMs:  &latency,
+		errorMsg:   nil,
+	}
+}

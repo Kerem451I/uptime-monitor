@@ -174,7 +174,7 @@ func (h *Handler) DeleteEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// for the del.Error() part, Not the most elegant pattern but it works for now
+	// for the err.Error() part, Not the most elegant pattern but it works for now
 	// later i can use a sentinel error variable, but that's a refinement for another time
 
 	w.WriteHeader(http.StatusNoContent)

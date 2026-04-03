@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/Kerem451I/uptime-monitor/internal/api"
+	"github.com/Kerem451I/uptime-monitor/internal/checker"
 	"github.com/Kerem451I/uptime-monitor/internal/db"
 	"github.com/joho/godotenv"
 )
@@ -45,6 +47,11 @@ func main() {
 		WriteTimeout: 20 * time.Second,
 		IdleTimeout:  30 * time.Second,
 	}
+
+	chkr := checker.New(pool)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go chkr.Run(ctx)
 
 	log.Printf("server starting on port %s", port)
 	if err := server.ListenAndServe(); err != nil {
