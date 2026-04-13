@@ -25,7 +25,13 @@ go.work
 go.work.sum
 
 # env file
-.env
+# .env
+
+# Ignore all .env files
+.env*
+
+# Allow example .env files
+!.env*.example
 
 # Editor/IDE
 # .idea/

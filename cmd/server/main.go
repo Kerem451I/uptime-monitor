@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -14,15 +15,36 @@ import (
 )
 
 func main() {
+	// after godotenv.Load(), the program can access DATABASE_URL as an environment variable.
 	if err := godotenv.Load(); err != nil {
 		log.Println("no .env file found, reading from environment")
 	}
-	// after godotenv.Load(), the program can access DATABASE_URL as an environment variable.
 
-	connString := os.Getenv("DATABASE_URL")
-	if connString == "" {
-		log.Fatal("DATABASE_URL is not set")
+	dbUser := os.Getenv("DB_USER")
+	dbPassword := os.Getenv("DB_PASSWORD")
+	dbName := os.Getenv("DB_NAME")
+	dbHost := os.Getenv("DB_HOST")
+	dbPort := os.Getenv("DB_PORT")
+
+	required := map[string]string{
+		"DB_USER":     dbUser,
+		"DB_PASSWORD": dbPassword,
+		"DB_NAME":     dbName,
+		"DB_HOST":     dbHost,
 	}
+
+	for key, val := range required {
+		if val == "" {
+			log.Fatalf("%s must be set", key)
+		}
+	}
+
+	if dbPort == "" {
+		dbPort = "5432" // default
+	}
+
+	connString := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		dbUser, dbPassword, dbHost, dbPort, dbName)
 
 	pool, err := db.New(connString)
 	if err != nil {
