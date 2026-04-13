@@ -6,11 +6,15 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Kerem451I/uptime-monitor/internal/api"
 	"github.com/Kerem451I/uptime-monitor/internal/checker"
 	"github.com/Kerem451I/uptime-monitor/internal/db"
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/joho/godotenv"
 )
 
@@ -52,6 +56,8 @@ func main() {
 	}
 	defer pool.Close()
 
+	runMigrations(connString)
+
 	log.Println("connected to database successfully")
 
 	port := os.Getenv("PORT")
@@ -79,4 +85,24 @@ func main() {
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func runMigrations(connString string) {
+	pgxConnString := strings.Replace(connString, "postgres://", "pgx5://", 1)
+	m, err := migrate.New("file://migrations", pgxConnString)
+	if err != nil {
+		log.Fatalf("could not create migrate instance: %v", err)
+	}
+	defer m.Close()
+
+	err = m.Up()
+	if err != nil {
+		if err == migrate.ErrNoChange {
+			log.Println("migrations: nothing to apply")
+			return
+		}
+		log.Fatalf("could not run migrations: %v", err)
+	}
+
+	log.Println("migrations: applied successfully")
 }
