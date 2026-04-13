@@ -38,6 +38,7 @@ func (c *Checker) Run(ctx context.Context) {
 	defer ticker.Stop()
 
 	for {
+		// waits for one of multiple channel events (ctx cancellation or ticker trigger)
 		select {
 		case <-ctx.Done():
 			return
@@ -80,6 +81,8 @@ func (c *Checker) processEndpoint(ctx context.Context, ep models.Endpoint) {
 func (c *Checker) ping(ctx context.Context, url string, expectedStatus int) checkResult {
 	start := time.Now()
 
+	// creates a new HTTP request and binds it to a context.
+	// if ctx is canceled, the request will be aborted to prevent hanging requests).
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		msg := err.Error()
@@ -89,6 +92,7 @@ func (c *Checker) ping(ctx context.Context, url string, expectedStatus int) chec
 		}
 	}
 
+	// sends the HTTP request and waits for a response.
 	resp, err := c.client.Do(req)
 	latency := int(time.Since(start).Milliseconds())
 
@@ -104,6 +108,8 @@ func (c *Checker) ping(ctx context.Context, url string, expectedStatus int) chec
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
+	// reads the entire response body and throws it away, then closes the connection.
+	// to allow connection reuse (avoids leaks)
 
 	status := resp.StatusCode
 	succeeded := status == expectedStatus
