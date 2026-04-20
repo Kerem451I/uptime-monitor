@@ -1,0 +1,8 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: uptime-monitor
+    static_configs:
+      # the app service name inside Docker's network
+      - targets: ["app:8080"]
