@@ -36,7 +36,7 @@ type checkResult struct {
 }
 
 func (c *Checker) Run(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -56,7 +56,7 @@ func (c *Checker) Run(ctx context.Context) {
 				if !ep.IsActive {
 					continue
 				}
-				c.processEndpoint(ctx, ep)
+				go c.processEndpoint(ctx, ep)
 			}
 		}
 	}
