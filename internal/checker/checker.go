@@ -5,9 +5,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/Kerem451I/uptime-monitor/internal/db"
+	"github.com/Kerem451I/uptime-monitor/internal/metrics"
 	"github.com/Kerem451I/uptime-monitor/internal/models"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -73,8 +75,21 @@ func (c *Checker) processEndpoint(ctx context.Context, ep models.Endpoint) {
 	}
 
 	result := c.ping(ctx, ep.URL, ep.ExpectedStatus)
+
 	if err := db.InsertCheck(ctx, c.pool, ep.ID, result.succeeded, result.statusCode, result.latencyMs, result.errorMsg); err != nil {
 		log.Printf("checker: endpoint %d insert check error: %v", ep.ID, err)
+		return
+	}
+
+	endpointID := strconv.FormatInt(ep.ID, 10)
+	statusLabel := "success"
+	if !result.succeeded {
+		statusLabel = "failure"
+	}
+
+	metrics.ChecksTotal.WithLabelValues(endpointID, statusLabel).Inc()
+	if result.latencyMs != nil {
+		metrics.CheckDuration.WithLabelValues(endpointID).Observe(float64(*result.latencyMs) / 1000.0)
 	}
 }
 
