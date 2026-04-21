@@ -30,5 +30,19 @@ func NewRouter(h *Handler) http.Handler {
 	register("GET /endpoints/{id}/checks/latest", "/endpoints/{id}/checks/latest", h.GetLatestCheck)
 	register("GET /endpoints/{id}/stats", "/endpoints/{id}/stats", h.GetEndpointStats)
 
-	return mux
+	// RateLimitMiddleware(limiter) returns a wrapper function,
+	// which is then immediately applied to the handler to produce a rate limited handler
+
+	limiter := NewIPRateLimiter(10, 20)
+
+	// return SecurityHeadersMiddleware(RateLimitMiddleware(limiter)(MaxBytesMiddleware(mux)))
+
+	handler := http.Handler(mux)
+
+	// apply from inner to outer, the order matters
+	handler = MaxBytesMiddleware(handler)
+	handler = RateLimitMiddleware(limiter)(handler)
+	handler = SecurityHeadersMiddleware(handler)
+
+	return handler
 }

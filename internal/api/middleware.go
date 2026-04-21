@@ -42,3 +42,27 @@ func MetricsMiddleware(pattern string, next http.Handler) http.Handler {
 		metrics.HTTPRequestDuration.WithLabelValues(r.Method, pattern).Observe(duration)
 	})
 }
+
+func SecurityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Without this a browser might execute a JSON response as JavaScript if an attacker tricks it into loading it as a script.
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		// prevents the API from being embedded in an iframe
+		w.Header().Set("X-Frame-Options", "DENY")
+		// controls how much referrer info is sent with requests. prevents leaking internal URLs to external services
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		// to disable the old, buggy XSS Auditors in older browsers, as they can actually create security holes
+		w.Header().Set("X-XSS-Protection", "0")
+		// API responses should never be cached. prevents sensitive data sitting in browser or proxy caches.
+		w.Header().Set("Cache-Control", "no-store")
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func MaxBytesMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB
+		next.ServeHTTP(w, r)
+	})
+}

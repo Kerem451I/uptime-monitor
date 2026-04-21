@@ -2,7 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/Kerem451I/uptime-monitor/internal/db"
@@ -48,8 +51,15 @@ func (h *Handler) CreateEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// presence check
 	if req.Name == "" || req.URL == "" {
 		h.writeError(w, http.StatusBadRequest, "name and url are required")
+		return
+	}
+
+	// SSRF and safety validation
+	if err := validateURL(req.URL); err != nil {
+		h.writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -130,8 +140,15 @@ func (h *Handler) UpdateEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// presence check
 	if req.Name == "" || req.URL == "" {
 		h.writeError(w, http.StatusBadRequest, "name and url are required")
+		return
+	}
+
+	// SSRF and safety validation
+	if err := validateURL(req.URL); err != nil {
+		h.writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -291,4 +308,50 @@ func (h *Handler) GetEndpointStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeJSON(w, http.StatusOK, stats)
+}
+
+func validateURL(rawURL string) error {
+	// basic format check
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL format")
+	}
+
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("URL must use http or https")
+	}
+
+	if parsed.Host == "" {
+		return fmt.Errorf("URL must have a host")
+	}
+
+	// resolve host to IP to check for SSRF (server side request forgery)
+	host := parsed.Hostname()
+	addrs, err := net.LookupHost(host)
+	if err != nil {
+		return fmt.Errorf("could not resolve host")
+	}
+
+	for _, addr := range addrs {
+		ip := net.ParseIP(addr)
+		if ip == nil {
+			continue
+		}
+		if isPrivateIP(ip) {
+			return fmt.Errorf("URL resolves to a private IP address")
+		}
+	}
+
+	return nil
+}
+
+// IsPrivate covers RFC 1918 (10.x, 172.16.x, 192.168.x)
+// IsLoopback covers 127.0.0.1
+// IsLinkLocalUnicast covers 169.254.x (Cloud metadata IPs)
+// ip.IsUnspecified() blocks 0.0.0.0
+func isPrivateIP(ip net.IP) bool {
+	return ip.IsPrivate() ||
+		ip.IsLoopback() ||
+		ip.IsLinkLocalUnicast() ||
+		ip.IsUnspecified()
 }
