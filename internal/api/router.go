@@ -6,7 +6,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-func NewRouter(h *Handler) http.Handler {
+func NewRouter(h *Handler, limiter *IPRateLimiter) http.Handler {
 	mux := http.NewServeMux()
 
 	// metrics and health are unwrapped
@@ -32,8 +32,8 @@ func NewRouter(h *Handler) http.Handler {
 
 	// RateLimitMiddleware(limiter) returns a wrapper function,
 	// which is then immediately applied to the handler to produce a rate limited handler
-
-	limiter := NewIPRateLimiter(10, 20)
+	// limiter := NewIPRateLimiter(10, 20)
+	// limiter is handled in main file
 
 	// return SecurityHeadersMiddleware(RateLimitMiddleware(limiter)(MaxBytesMiddleware(mux)))
 

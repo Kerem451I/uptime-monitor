@@ -6,7 +6,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Kerem451I/uptime-monitor/internal/api"
@@ -56,19 +58,37 @@ func main() {
 	}
 	defer pool.Close()
 
-	runMigrations(connString)
-
 	log.Println("connected to database successfully")
+
+	runMigrations(connString)
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	handler := api.NewHandler(pool)
-	router := api.NewRouter(handler)
+	// create a context that listens for Ctrl+C (SIGINT) or SIGTERM
+	// this replaces context.WithCancel(context.Background())
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	server := http.Server{
+	// context for lifecycle
+	// ctx, cancel := context.WithCancel(context.Background())
+	// defer cancel()
+
+	// initialize the logic/handlers
+	chkr := checker.New(pool)
+	limiter := api.NewIPRateLimiter(10, 20)
+
+	handler := api.NewHandler(pool)
+	router := api.NewRouter(handler, limiter)
+
+	// start background goroutines
+	go chkr.Run(ctx)
+	go limiter.Start(ctx)
+
+	// define the server
+	server := &http.Server{
 		Addr:         ":" + port,
 		Handler:      router,
 		ReadTimeout:  10 * time.Second,
@@ -76,15 +96,29 @@ func main() {
 		IdleTimeout:  30 * time.Second,
 	}
 
-	chkr := checker.New(pool)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go chkr.Run(ctx)
+	// start the server in a goroutine
+	go func() {
+		log.Printf("server starting on port %s", port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen: %s\n", err)
+		}
+	}()
 
-	log.Printf("server starting on port %s", port)
-	if err := server.ListenAndServe(); err != nil {
-		log.Fatal(err)
+	// waits here until the context is cancelled
+	<-ctx.Done()
+
+	log.Println("shutting down gracefully...")
+
+	// give the server 5 seconds to finish active (in flight) requests
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelShutdown()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("server forced to shutdown: %v", err)
 	}
+
+	log.Println("server exited.")
+
 }
 
 func runMigrations(connString string) {
