@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"log"
 	"net"
 	"net/http"
 	"sync"
@@ -26,16 +28,29 @@ type IPRateLimiter struct {
 
 // b for burst
 func NewIPRateLimiter(r rate.Limit, b int) *IPRateLimiter {
-	i := &IPRateLimiter{
+	return &IPRateLimiter{
 		ips: make(map[string]*client),
 		r:   r,
 		b:   b,
 	}
+}
 
-	// start a background cleanup goroutine
-	go i.cleanupClients()
+// Start begins the background cleanup loop.
+// it will run until the provided context is cancelled.
+func (i *IPRateLimiter) Start(ctx context.Context) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop() // Clean up the ticker when the loop exits
 
-	return i
+	for {
+		select {
+		case <-ticker.C:
+			i.cleanup()
+		case <-ctx.Done():
+			log.Println("Rate limiter cleanup stopped.")
+			return
+			// Context was cancelled (for example, server shutdown), exit the goroutine
+		}
+	}
 }
 
 func (i *IPRateLimiter) getLimiter(ip string) *rate.Limiter {
@@ -55,16 +70,15 @@ func (i *IPRateLimiter) getLimiter(ip string) *rate.Limiter {
 	return limiter
 }
 
-func (i *IPRateLimiter) cleanupClients() {
-	for {
-		time.Sleep(time.Minute)
-		i.mu.Lock()
-		for ip, client := range i.ips {
-			if time.Since(client.lastSeen) > 3*time.Minute {
-				delete(i.ips, ip)
-			}
+// the actual cleanup logic
+func (i *IPRateLimiter) cleanup() {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+
+	for ip, client := range i.ips {
+		if time.Since(client.lastSeen) > 3*time.Minute {
+			delete(i.ips, ip)
 		}
-		i.mu.Unlock()
 	}
 }
 
